@@ -13,10 +13,19 @@ import time
 import cv2
 import os
 
+import psycopg2
 import face_recognition
 from datetime import datetime
 
 # Edited by Veer
+
+#establishing the connection
+conn = psycopg2.connect(
+   database="AttendanceDB", user='postgres', password='veer', host='127.0.0.1', port= '5432'
+)
+
+#Creating a cursor object using the cursor() method
+cursor = conn.cursor()
 
 #camera_ip = 'http://172.16.2.107:8080/video'
 path = 'ImageBasic'
@@ -53,18 +62,27 @@ def findEncodings(images):
     return encodeList
 
 def markAttendance(name):
-	with open('attendance.csv', 'r+') as f:         # r+ mean read & write
-		myDataList = f.readlines()
-		nameList = []
-		for line in myDataList:
-			entry = line.split(',')
-			nameList.append(entry[0])
-		if name not in nameList:
-			now = datetime.now()
-			dtstring = now.strftime('%H:%M:%S')
-			f.writelines(f'\n{name}, {dtstring}')
+	# Preparing SQL queries to INSERT a record into the database.
+	cursor.execute('''SELECT roll_no FROM public.home_registeration where name = '%s';'''%name)
+	
+	#Fetching 1st row from the table
+	result = cursor.fetchone()
+	now = datetime.now()
+	rollno = result
+	# print(rollno[0])
+	# print(type(rollno))
+	# print(now.date())
+	
+	cursor.execute('''INSERT INTO home_attendance(date, status, roll_no_id)
+	VALUES ('%s', 'present', %s)'''%(now.date(), rollno[0]))
 
+	print(now.date())
 
+	# Commit your changes in the database
+	conn.commit()
+
+	print("Records inserted........")
+	
 names()
 encodeListKnown = findEncodings(images)
 print("Encoding Complete")
@@ -98,6 +116,7 @@ le = pickle.loads(open(args["le"], "rb").read())
 print("[INFO] starting video stream...")
 vs = VideoStream(src=0).start()
 time.sleep(2.0)
+mark = False
 
 # loop over the frames from the video stream
 while True:
@@ -161,13 +180,16 @@ while True:
 				for encodeFace, face_loc in zip(encodesCurFrame, facesCurFrame):
 					matches = face_recognition.compare_faces(encodeListKnown, encodeFace)
 					faceDis = face_recognition.face_distance(encodeListKnown, encodeFace)
-					print(face_loc)
 					
 					matchIndex = np.argmin(faceDis)
 					if matches[matchIndex]:
-						name = classNames[matchIndex].upper()
-						markAttendance(name)
-						print(name)
+						
+						name = classNames[matchIndex]
+						if mark != True:
+							markAttendance(name)
+							mark = True
+						else:
+							continue
 
 			# draw the label and bounding box on the frame
 			label = "{}: {:.4f}".format(label, preds[j])
